@@ -309,7 +309,7 @@ func (h *fhirHandler) read(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(resource)))
+	setVersionHeaders(w, resource)
 	writeFHIR(w, r, http.StatusOK, resource)
 }
 
@@ -329,6 +329,7 @@ func (h *fhirHandler) vread(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	setVersionHeaders(w, resource)
 	writeFHIR(w, r, http.StatusOK, resource)
 }
 
@@ -750,8 +751,8 @@ func (h *fhirHandler) create(w http.ResponseWriter, r *http.Request) {
 			}
 			slog.Debug("conditional create matched existing resource", "resourceType", rt, "id", existingID)
 			w.Header().Set("Location", fmt.Sprintf("%s/%s/%s", h.tenantBaseURL(r.Context()), rt, existingID))
-			w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(existing)))
-			writeFHIR(w, r, http.StatusOK, existing)
+			setVersionHeaders(w, existing)
+			writeWriteResult(w, r, http.StatusOK, existing)
 			return
 		}
 		// count == 0 → fall through to a normal create.
@@ -775,10 +776,8 @@ func (h *fhirHandler) create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	id, _ := resource["id"].(string)
-	w.Header().Set("Location", fmt.Sprintf("%s/%s/%s/_history/1", h.tenantBaseURL(r.Context()), rt, id))
-	w.Header().Set("ETag", `W/"1"`)
-	writeFHIR(w, r, http.StatusCreated, resource)
+	h.setWriteHeaders(w, r, rt, resource)
+	writeWriteResult(w, r, http.StatusCreated, resource)
 }
 
 // ─── Update ───────────────────────────────────────────────────────────────────
@@ -841,13 +840,12 @@ func (h *fhirHandler) update(w http.ResponseWriter, r *http.Request) {
 		_ = h.store.SyncSearchParameter(r.Context(), resource)
 	}
 
-	w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(resource)))
+	h.setWriteHeaders(w, r, rt, resource)
 	if created {
-		w.Header().Set("Location", fmt.Sprintf("%s/%s/%s/_history/1", h.tenantBaseURL(r.Context()), rt, id))
-		writeFHIR(w, r, http.StatusCreated, resource)
+		writeWriteResult(w, r, http.StatusCreated, resource)
 		return
 	}
-	writeFHIR(w, r, http.StatusOK, resource)
+	writeWriteResult(w, r, http.StatusOK, resource)
 }
 
 // ─── Patch ────────────────────────────────────────────────────────────────────
@@ -880,8 +878,8 @@ func (h *fhirHandler) patch(w http.ResponseWriter, r *http.Request) {
 			handleError(w, err)
 			return
 		}
-		w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(resource)))
-		writeFHIR(w, r, http.StatusOK, resource)
+		h.setWriteHeaders(w, r, rt, resource)
+		writeWriteResult(w, r, http.StatusOK, resource)
 	}
 }
 
@@ -909,8 +907,8 @@ func (h *fhirHandler) jsonPatch(w http.ResponseWriter, r *http.Request, rt, id s
 		handleError(w, err)
 		return
 	}
-	w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(updated)))
-	writeFHIR(w, r, http.StatusOK, updated)
+	h.setWriteHeaders(w, r, rt, updated)
+	writeWriteResult(w, r, http.StatusOK, updated)
 }
 
 func (h *fhirHandler) fhirPatch(w http.ResponseWriter, r *http.Request, rt, id string) {
@@ -937,8 +935,8 @@ func (h *fhirHandler) fhirPatch(w http.ResponseWriter, r *http.Request, rt, id s
 		handleError(w, err)
 		return
 	}
-	w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(updated)))
-	writeFHIR(w, r, http.StatusOK, updated)
+	h.setWriteHeaders(w, r, rt, updated)
+	writeWriteResult(w, r, http.StatusOK, updated)
 }
 
 func (h *fhirHandler) xmlPatch(w http.ResponseWriter, r *http.Request, rt, id string) {
@@ -965,8 +963,8 @@ func (h *fhirHandler) xmlPatch(w http.ResponseWriter, r *http.Request, rt, id st
 		handleError(w, err)
 		return
 	}
-	w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(updated)))
-	writeFHIR(w, r, http.StatusOK, updated)
+	h.setWriteHeaders(w, r, rt, updated)
+	writeWriteResult(w, r, http.StatusOK, updated)
 }
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
@@ -1038,8 +1036,8 @@ func (h *fhirHandler) conditionalUpdate(w http.ResponseWriter, r *http.Request) 
 		if rt == "SearchParameter" {
 			_ = h.store.SyncSearchParameter(r.Context(), resource)
 		}
-		w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(resource)))
-		writeFHIR(w, r, http.StatusOK, resource)
+		h.setWriteHeaders(w, r, rt, resource)
+		writeWriteResult(w, r, http.StatusOK, resource)
 		return
 	}
 
@@ -1053,10 +1051,8 @@ func (h *fhirHandler) conditionalUpdate(w http.ResponseWriter, r *http.Request) 
 	if rt == "SearchParameter" {
 		_ = h.store.SyncSearchParameter(r.Context(), resource)
 	}
-	id, _ := resource["id"].(string)
-	w.Header().Set("Location", fmt.Sprintf("%s/%s/%s/_history/1", h.tenantBaseURL(r.Context()), rt, id))
-	w.Header().Set("ETag", `W/"1"`)
-	writeFHIR(w, r, http.StatusCreated, resource)
+	h.setWriteHeaders(w, r, rt, resource)
+	writeWriteResult(w, r, http.StatusCreated, resource)
 }
 
 // conditionalDelete handles DELETE /{resourceType}?<search> — delete the single
@@ -1962,4 +1958,59 @@ func versionFromMeta(resource map[string]any) string {
 		}
 	}
 	return "1"
+}
+
+// setVersionHeaders sets ETag and, from meta.lastUpdated, Last-Modified.
+func setVersionHeaders(w http.ResponseWriter, resource map[string]any) {
+	w.Header().Set("ETag", fmt.Sprintf(`W/"%s"`, versionFromMeta(resource)))
+	meta, _ := resource["meta"].(map[string]any)
+	lastUpdated, _ := meta["lastUpdated"].(string)
+	if t, err := time.Parse(time.RFC3339Nano, lastUpdated); err == nil {
+		w.Header().Set("Last-Modified", t.UTC().Format(http.TimeFormat))
+	}
+}
+
+// setWriteHeaders sets ETag, Last-Modified and the versioned Location for a
+// create, update or patch response.
+func (h *fhirHandler) setWriteHeaders(w http.ResponseWriter, r *http.Request, rt string, resource map[string]any) {
+	id, _ := resource["id"].(string)
+	w.Header().Set("Location", fmt.Sprintf("%s/%s/%s/_history/%s", h.tenantBaseURL(r.Context()), rt, id, versionFromMeta(resource)))
+	setVersionHeaders(w, resource)
+}
+
+// writeWriteResult writes a create, update or patch response in the form the
+// Prefer header asks for (FHIR R4 http.html#ops): the resource by default, no
+// body for return=minimal, or an OperationOutcome for return=OperationOutcome.
+func writeWriteResult(w http.ResponseWriter, r *http.Request, status int, resource map[string]any) {
+	switch preferReturn(r) {
+	case "minimal":
+		w.WriteHeader(status)
+	case "OperationOutcome":
+		rt, _ := resource["resourceType"].(string)
+		id, _ := resource["id"].(string)
+		writeFHIR(w, r, status, map[string]any{
+			"resourceType": "OperationOutcome",
+			"issue": []any{map[string]any{
+				"severity":    "information",
+				"code":        "informational",
+				"diagnostics": fmt.Sprintf("%s/%s saved as version %s", rt, id, versionFromMeta(resource)),
+			}},
+		})
+	default:
+		writeFHIR(w, r, status, resource)
+	}
+}
+
+// preferReturn returns the value of the Prefer header's "return" preference
+// (RFC 7240), or "" when it is not set.
+func preferReturn(r *http.Request) string {
+	for _, header := range r.Header.Values("Prefer") {
+		for _, pref := range strings.FieldsFunc(header, func(c rune) bool { return c == ',' || c == ';' }) {
+			name, value, ok := strings.Cut(strings.TrimSpace(pref), "=")
+			if ok && strings.EqualFold(strings.TrimSpace(name), "return") {
+				return strings.Trim(strings.TrimSpace(value), `"`)
+			}
+		}
+	}
+	return ""
 }
