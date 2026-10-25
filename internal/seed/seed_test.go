@@ -18,8 +18,11 @@ package seed
 
 import (
 	"encoding/csv"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/wso2/fhir-server/internal/fhirpath"
 )
 
 type csvRow struct {
@@ -103,6 +106,50 @@ func TestEmbeddedCSV_PathsStartAtOwnResource(t *testing.T) {
 			}
 			if root != row.resource {
 				t.Errorf("line %d: %s %s: path %q starts at %s", row.line, row.resource, row.param, path, root)
+			}
+		}
+	}
+}
+
+// The onset-* and abatement-* rows were cut off at ".as", which matches no
+// field, so those Condition searches never matched. Each must select only its
+// own onset[x] / abatement[x] types.
+func TestEmbeddedCSV_ConditionOnsetAbatement(t *testing.T) {
+	exprs := map[string]string{}
+	for _, row := range embeddedRows(t) {
+		if row.resource == "Condition" {
+			exprs[row.param] = row.expression
+		}
+	}
+	values := map[string]any{
+		"DateTime": "2023-11-14",
+		"Period":   map[string]any{"start": "2020-01-01", "end": "2020-06-30"},
+		"Age":      map[string]any{"value": 7, "code": "a"},
+		"Range":    map[string]any{"low": map[string]any{"value": 5}},
+		"String":   "early adulthood",
+	}
+	wants := map[string][]string{
+		"onset-date":       {"DateTime", "Period"},
+		"onset-age":        {"Age", "Range"},
+		"onset-info":       {"String"},
+		"abatement-date":   {"DateTime", "Period"},
+		"abatement-age":    {"Age", "Range"},
+		"abatement-string": {"String"},
+	}
+	for param, types := range wants {
+		element, _, _ := strings.Cut(param, "-")
+		for suffix, v := range values {
+			cond := map[string]any{"resourceType": "Condition", element + suffix: v}
+			got, err := fhirpath.EvaluatePolymorphic(exprs[param], cond)
+			if err != nil {
+				t.Fatalf("%s: evaluate %q: %v", param, exprs[param], err)
+			}
+			want := 0
+			if slices.Contains(types, suffix) {
+				want = 1
+			}
+			if len(got) != want {
+				t.Errorf("%s on %s%s: got %d values, want %d (expression %q)", param, element, suffix, len(got), want, exprs[param])
 			}
 		}
 	}

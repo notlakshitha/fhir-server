@@ -1124,6 +1124,52 @@ func TestSearch_ShiftedClinicalExpressions(t *testing.T) {
 	}
 }
 
+// TestSearch_ConditionOnsetAbatement covers the Condition onset-* and
+// abatement-* rows, which were cut off at ".as" and matched nothing.
+func TestSearch_ConditionOnsetAbatement(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	s.Create(ctx, "Condition", map[string]any{
+		"resourceType": "Condition", "code": map[string]any{"text": "Hypertension"},
+		"onsetDateTime": "2023-11-14", "abatementDateTime": "2024-01-10",
+	})
+	s.Create(ctx, "Condition", map[string]any{
+		"resourceType": "Condition", "code": map[string]any{"text": "Asthma"},
+		"onsetPeriod":     map[string]any{"start": "2020-01-01", "end": "2020-06-30"},
+		"abatementString": "outgrew it",
+	})
+	s.Create(ctx, "Condition", map[string]any{
+		"resourceType": "Condition", "code": map[string]any{"text": "Migraine"},
+		"onsetString":  "early adulthood",
+		"abatementAge": map[string]any{"value": 40, "system": "http://unitsofmeasure.org", "code": "a"},
+	})
+
+	cases := []struct {
+		params map[string][]string
+		want   int
+		label  string
+	}{
+		{map[string][]string{"onset-date": {"2023-11-14"}}, 1, "onset-date=2023-11-14"},
+		{map[string][]string{"onset-date": {"ge1900-01-01"}}, 2, "onset-date=ge1900-01-01"},
+		{map[string][]string{"onset-date": {"2020"}}, 1, "onset-date=2020 (onsetPeriod)"},
+		{map[string][]string{"abatement-date": {"2024-01-10"}}, 1, "abatement-date=2024-01-10"},
+		{map[string][]string{"onset-info": {"early"}}, 1, "onset-info=early"},
+		{map[string][]string{"abatement-string": {"outgrew"}}, 1, "abatement-string=outgrew"},
+		{map[string][]string{"abatement-age": {"40"}}, 1, "abatement-age=40"},
+	}
+	for _, tc := range cases {
+		res, err := s.Search(ctx, store.SearchParams{ResourceType: "Condition", Params: tc.params})
+		if err != nil {
+			t.Errorf("Condition?%s: %v", tc.label, err)
+			continue
+		}
+		if res.Total != tc.want {
+			t.Errorf("Condition?%s: expected %d, got %d", tc.label, tc.want, res.Total)
+		}
+	}
+}
+
 func TestSearch_Has(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
