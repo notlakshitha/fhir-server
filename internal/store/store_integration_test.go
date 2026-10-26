@@ -1061,6 +1061,115 @@ func TestSearch_PreviouslyBlankExpressions(t *testing.T) {
 	}
 }
 
+// TestSearch_ShiftedClinicalExpressions covers the identifier and code rows
+// that held the next resource's expression (e.g. Encounter's identifier row
+// read DocumentReference.masterIdentifier), so these searches found nothing.
+func TestSearch_ShiftedClinicalExpressions(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	ident := func(v string) map[string]any { return map[string]any{"system": "urn:test", "value": v} }
+	snomed := func(c string) map[string]any {
+		return map[string]any{"coding": []any{map[string]any{"system": "http://snomed.info/sct", "code": c}}}
+	}
+
+	s.Create(ctx, "Encounter", map[string]any{
+		"resourceType": "Encounter", "status": "finished", "identifier": []any{ident("enc-1")},
+	})
+	s.Create(ctx, "DocumentReference", map[string]any{
+		"resourceType": "DocumentReference", "status": "current",
+		"masterIdentifier": ident("doc-master"), "identifier": []any{ident("doc-1")},
+	})
+	s.Create(ctx, "Condition", map[string]any{"resourceType": "Condition", "code": snomed("38341003")})
+	s.Create(ctx, "AllergyIntolerance", map[string]any{
+		"resourceType": "AllergyIntolerance", "code": snomed("91936005"),
+		"reaction": []any{map[string]any{"substance": snomed("372687004")}},
+	})
+	s.Create(ctx, "FamilyMemberHistory", map[string]any{
+		"resourceType": "FamilyMemberHistory", "status": "completed",
+		"condition": []any{map[string]any{"code": snomed("22298006")}},
+	})
+	s.Create(ctx, "List", map[string]any{
+		"resourceType": "List", "status": "current", "mode": "working", "code": snomed("182836005"),
+	})
+	s.Create(ctx, "MedicationAdministration", map[string]any{
+		"resourceType": "MedicationAdministration", "status": "completed",
+		"medicationCodeableConcept": snomed("387517004"), "effectiveDateTime": "2024-01-10",
+	})
+
+	cases := []struct {
+		rt     string
+		params map[string][]string
+		want   int
+		label  string
+	}{
+		{"Encounter", map[string][]string{"identifier": {"urn:test|enc-1"}}, 1, "Encounter?identifier"},
+		{"DocumentReference", map[string][]string{"identifier": {"urn:test|doc-master"}}, 1, "DocumentReference?identifier (masterIdentifier)"},
+		{"DocumentReference", map[string][]string{"identifier": {"urn:test|doc-1"}}, 1, "DocumentReference?identifier"},
+		{"Condition", map[string][]string{"code": {"http://snomed.info/sct|38341003"}}, 1, "Condition?code"},
+		{"AllergyIntolerance", map[string][]string{"code": {"http://snomed.info/sct|372687004"}}, 1, "AllergyIntolerance?code (reaction.substance)"},
+		{"FamilyMemberHistory", map[string][]string{"code": {"http://snomed.info/sct|22298006"}}, 1, "FamilyMemberHistory?code"},
+		{"List", map[string][]string{"code": {"http://snomed.info/sct|182836005"}}, 1, "List?code"},
+		{"MedicationAdministration", map[string][]string{"code": {"http://snomed.info/sct|387517004"}}, 1, "MedicationAdministration?code"},
+	}
+	for _, tc := range cases {
+		res, err := s.Search(ctx, store.SearchParams{ResourceType: tc.rt, Params: tc.params})
+		if err != nil {
+			t.Errorf("%s: %v", tc.label, err)
+			continue
+		}
+		if res.Total != tc.want {
+			t.Errorf("%s: expected %d, got %d", tc.label, tc.want, res.Total)
+		}
+	}
+}
+
+// TestSearch_ConditionOnsetAbatement covers the Condition onset-* and
+// abatement-* rows, which were cut off at ".as" and matched nothing.
+func TestSearch_ConditionOnsetAbatement(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	s.Create(ctx, "Condition", map[string]any{
+		"resourceType": "Condition", "code": map[string]any{"text": "Hypertension"},
+		"onsetDateTime": "2023-11-14", "abatementDateTime": "2024-01-10",
+	})
+	s.Create(ctx, "Condition", map[string]any{
+		"resourceType": "Condition", "code": map[string]any{"text": "Asthma"},
+		"onsetPeriod":     map[string]any{"start": "2020-01-01", "end": "2020-06-30"},
+		"abatementString": "outgrew it",
+	})
+	s.Create(ctx, "Condition", map[string]any{
+		"resourceType": "Condition", "code": map[string]any{"text": "Migraine"},
+		"onsetString":  "early adulthood",
+		"abatementAge": map[string]any{"value": 40, "system": "http://unitsofmeasure.org", "code": "a"},
+	})
+
+	cases := []struct {
+		params map[string][]string
+		want   int
+		label  string
+	}{
+		{map[string][]string{"onset-date": {"2023-11-14"}}, 1, "onset-date=2023-11-14"},
+		{map[string][]string{"onset-date": {"ge1900-01-01"}}, 2, "onset-date=ge1900-01-01"},
+		{map[string][]string{"onset-date": {"2020"}}, 1, "onset-date=2020 (onsetPeriod)"},
+		{map[string][]string{"abatement-date": {"2024-01-10"}}, 1, "abatement-date=2024-01-10"},
+		{map[string][]string{"onset-info": {"early"}}, 1, "onset-info=early"},
+		{map[string][]string{"abatement-string": {"outgrew"}}, 1, "abatement-string=outgrew"},
+		{map[string][]string{"abatement-age": {"40"}}, 1, "abatement-age=40"},
+	}
+	for _, tc := range cases {
+		res, err := s.Search(ctx, store.SearchParams{ResourceType: "Condition", Params: tc.params})
+		if err != nil {
+			t.Errorf("Condition?%s: %v", tc.label, err)
+			continue
+		}
+		if res.Total != tc.want {
+			t.Errorf("Condition?%s: expected %d, got %d", tc.label, tc.want, res.Total)
+		}
+	}
+}
+
 func TestSearch_Has(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
