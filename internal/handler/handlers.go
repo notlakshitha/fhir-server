@@ -2002,10 +2002,12 @@ func writeWriteResult(w http.ResponseWriter, r *http.Request, status int, resour
 }
 
 // preferReturn returns the value of the Prefer header's "return" preference
-// (RFC 7240), or "" when it is not set.
+// (RFC 7240), or "" when it is not set. Preferences are separated by commas;
+// what follows a semicolon is a parameter of the preference before it.
 func preferReturn(r *http.Request) string {
 	for _, header := range r.Header.Values("Prefer") {
-		for _, pref := range strings.FieldsFunc(header, func(c rune) bool { return c == ',' || c == ';' }) {
+		for _, pref := range strings.Split(header, ",") {
+			pref, _, _ = strings.Cut(pref, ";")
 			name, value, ok := strings.Cut(strings.TrimSpace(pref), "=")
 			if ok && strings.EqualFold(strings.TrimSpace(name), "return") {
 				return strings.Trim(strings.TrimSpace(value), `"`)

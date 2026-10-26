@@ -81,6 +81,9 @@ func TestUpdate_PreferReturn(t *testing.T) {
 		{"return=minimal", ""},
 		{"return=OperationOutcome", "OperationOutcome"},
 		{`handling=strict, return="minimal"`, ""},
+		{"return=minimal; foo=bar", ""},
+		// "return=minimal" here is a parameter of "handling", not a preference.
+		{"handling=strict; return=minimal", "Encounter"},
 	}
 	for _, tc := range cases {
 		w := doWithHeaders(t, h, http.MethodPut, "/fhir/r4/Encounter/e1", savedEncounter("e1", "1"),
