@@ -783,3 +783,53 @@ func TestContentType_IsFHIRJSON(t *testing.T) {
 		t.Errorf("want application/fhir+json, got %q", ct)
 	}
 }
+
+func TestRead_UnknownOperationNotResourceID(t *testing.T) {
+	ms := &mockStore{}
+	ms.readFn = func(_ context.Context, rt, id string) (map[string]any, error) {
+		t.Fatalf("store.Read should not be called for operation id %q", id)
+		return nil, nil
+	}
+	h := newRouter(ms)
+	w := do(t, h, http.MethodGet, "/fhir/r4/Patient/$summary", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	if body["resourceType"] != "OperationOutcome" {
+		t.Fatalf("want OperationOutcome, got %v", body["resourceType"])
+	}
+	issues, _ := body["issue"].([]any)
+	if len(issues) == 0 {
+		t.Fatal("expected an issue")
+	}
+	issue, _ := issues[0].(map[string]any)
+	if issue["code"] != "not-supported" {
+		t.Errorf("want code not-supported, got %v", issue["code"])
+	}
+	diag, _ := issue["diagnostics"].(string)
+	if !strings.Contains(diag, "$summary") || strings.Contains(diag, "compartment") {
+		t.Errorf("diagnostics should name the operation, not compartment: %q", diag)
+	}
+}
+
+func TestCompartmentSearch_UnknownOperationNotCompartmentType(t *testing.T) {
+	h := newRouter(&mockStore{})
+	w := do(t, h, http.MethodGet, "/fhir/r4/Patient/p1/$summary", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	issues, _ := body["issue"].([]any)
+	issue, _ := issues[0].(map[string]any)
+	diag, _ := issue["diagnostics"].(string)
+	if issue["code"] != "not-supported" {
+		t.Errorf("want code not-supported, got %v", issue["code"])
+	}
+	if !strings.Contains(diag, "$summary") {
+		t.Errorf("diagnostics should mention $summary: %q", diag)
+	}
+	if strings.Contains(diag, "compartment") {
+		t.Errorf("must not look like a compartment error: %q", diag)
+	}
+}

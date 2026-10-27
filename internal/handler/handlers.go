@@ -303,6 +303,11 @@ func parseIfMatchVersion(header string) (int, bool) {
 func (h *fhirHandler) read(w http.ResponseWriter, r *http.Request) {
 	rt := chi.URLParam(r, "resourceType")
 	id := chi.URLParam(r, "id")
+	if strings.HasPrefix(id, "$") {
+		operationOutcome(w, http.StatusBadRequest, "error", "not-supported",
+			fmt.Sprintf("Operation %s is not supported on %s", id, rt))
+		return
+	}
 
 	resource, err := h.store.Read(r.Context(), rt, id)
 	if err != nil {
@@ -1776,6 +1781,13 @@ func (h *fhirHandler) compartmentSearch(w http.ResponseWriter, r *http.Request) 
 	ownerType := chi.URLParam(r, "resourceType")
 	ownerID := chi.URLParam(r, "id")
 	targetRT := chi.URLParam(r, "targetResourceType")
+	// Names starting with "$" are FHIR operations, not compartment resource types.
+	// Reject them here so unknown ops are not misreported as compartment errors.
+	if strings.HasPrefix(targetRT, "$") {
+		operationOutcome(w, http.StatusBadRequest, "error", "not-supported",
+			fmt.Sprintf("Operation %s is not supported on %s", targetRT, ownerType))
+		return
+	}
 
 	comp := compartment.Lookup(ownerType)
 	if comp == nil {
