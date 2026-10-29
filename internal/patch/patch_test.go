@@ -242,3 +242,25 @@ func TestFHIRPatch_Delete(t *testing.T) {
 		t.Error("gender should be deleted")
 	}
 }
+
+func TestJSONPatch_MissingPathFails(t *testing.T) {
+	cases := map[string]map[string]any{
+		"test null on missing": {"op": "test", "path": "/nope", "value": nil},
+		"copy from missing":    {"op": "copy", "from": "/nope", "path": "/copied"},
+		"move from missing":    {"op": "move", "from": "/nope", "path": "/moved"},
+	}
+	for name, op := range cases {
+		if out, err := ApplyJSONPatch(doc(), []map[string]any{op}); err == nil {
+			t.Errorf("%s: expected error, got %#v", name, out)
+		}
+	}
+}
+
+func TestJSONPatch_TestExplicitNullMember(t *testing.T) {
+	d := doc()
+	d["deceasedBoolean"] = nil
+	op := map[string]any{"op": "test", "path": "/deceasedBoolean", "value": nil}
+	if _, err := ApplyJSONPatch(d, []map[string]any{op}); err != nil {
+		t.Fatalf("test against an explicit null member should pass: %v", err)
+	}
+}

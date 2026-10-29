@@ -264,7 +264,11 @@ func jsonPatchGet(doc map[string]any, ptr string) (any, error) {
 	for _, key := range parts {
 		switch v := cur.(type) {
 		case map[string]any:
-			cur = v[key]
+			next, ok := v[key]
+			if !ok {
+				return nil, fmt.Errorf("path not found: %q", ptr)
+			}
+			cur = next
 		case []any:
 			idx, e := parseIndex(key, len(v))
 			if e != nil {
