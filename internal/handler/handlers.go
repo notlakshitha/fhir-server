@@ -136,14 +136,52 @@ func negotiatedFormat(r *http.Request) string {
 			return "json"
 		}
 	}
-	accept := r.Header.Get("Accept")
-	switch {
-	case strings.Contains(accept, "application/fhir+xml") || strings.Contains(accept, "application/xml"):
-		return "xml"
-	case strings.Contains(accept, "turtle") || strings.Contains(accept, "application/fhir+ttl"):
-		return "turtle"
+	return acceptFormat(r.Header.Get("Accept"))
+}
+
+// acceptFormat picks "xml", "turtle", or "json" from an Accept header value.
+// Media types are compared case-insensitively, entries with q=0 are ignored,
+// and the highest q-value wins; ties keep the order of the header. JSON types
+// and wildcards count as JSON; types the server cannot produce are skipped,
+// and JSON (the server default) is used when nothing else matches.
+func acceptFormat(accept string) string {
+	best, bestQ := "json", -1.0
+	for _, part := range strings.Split(accept, ",") {
+		fields := strings.Split(part, ";")
+		mt := strings.ToLower(strings.TrimSpace(fields[0]))
+		if mt == "" {
+			continue
+		}
+		q := 1.0
+		for _, p := range fields[1:] {
+			k, v, ok := strings.Cut(strings.TrimSpace(p), "=")
+			if ok && strings.EqualFold(strings.TrimSpace(k), "q") {
+				f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+				if err != nil {
+					f = 0
+				}
+				q = f
+			}
+		}
+		if q <= 0 {
+			continue
+		}
+		var format string
+		switch {
+		case mt == "application/fhir+xml" || mt == "application/xml":
+			format = "xml"
+		case strings.Contains(mt, "turtle") || mt == "application/fhir+ttl":
+			format = "turtle"
+		case strings.Contains(mt, "json") || mt == "*/*" || mt == "application/*":
+			format = "json"
+		default:
+			continue // a type we cannot serve does not compete
+		}
+		if q > bestQ {
+			best, bestQ = format, q
+		}
 	}
-	return "json"
+	return best
 }
 
 // writeFHIR writes a FHIR resource as JSON, XML, or Turtle depending on the
