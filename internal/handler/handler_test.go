@@ -833,3 +833,65 @@ func TestCompartmentSearch_UnknownOperationNotCompartmentType(t *testing.T) {
 		t.Errorf("must not look like a compartment error: %q", diag)
 	}
 }
+
+func assertUnknownOperationRejected(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	if body["resourceType"] != "OperationOutcome" {
+		t.Fatalf("want OperationOutcome, got %v", body["resourceType"])
+	}
+	issues, _ := body["issue"].([]any)
+	if len(issues) == 0 {
+		t.Fatal("expected an issue")
+	}
+	issue, _ := issues[0].(map[string]any)
+	if issue["code"] != "not-supported" {
+		t.Errorf("want code not-supported, got %v", issue["code"])
+	}
+	diag, _ := issue["diagnostics"].(string)
+	if !strings.Contains(diag, "$summary") {
+		t.Errorf("diagnostics should name the operation: %q", diag)
+	}
+}
+
+func TestUpdate_UnknownOperationNotResourceID(t *testing.T) {
+	ms := &mockStore{}
+	ms.updateFn = func(_ context.Context, rt, id string, body map[string]any, ifMatchVersion int) (map[string]any, error) {
+		t.Fatalf("store.Update should not be called for operation id %q", id)
+		return nil, nil
+	}
+	h := newRouter(ms)
+	w := do(t, h, http.MethodPut, "/fhir/r4/Patient/$summary",
+		map[string]any{"resourceType": "Patient", "id": "$summary"})
+	assertUnknownOperationRejected(t, w)
+}
+
+func TestDelete_UnknownOperationNotResourceID(t *testing.T) {
+	ms := &mockStore{}
+	ms.deleteFn = func(_ context.Context, rt, id string) error {
+		t.Fatalf("store.Delete should not be called for operation id %q", id)
+		return nil
+	}
+	h := newRouter(ms)
+	w := do(t, h, http.MethodDelete, "/fhir/r4/Patient/$summary", nil)
+	assertUnknownOperationRejected(t, w)
+}
+
+func TestPatch_UnknownOperationNotResourceID(t *testing.T) {
+	ms := &mockStore{}
+	ms.patchFn = func(_ context.Context, rt, id string, patch map[string]any) (map[string]any, error) {
+		t.Fatalf("store.Patch should not be called for operation id %q", id)
+		return nil, nil
+	}
+	ms.readFn = func(_ context.Context, rt, id string) (map[string]any, error) {
+		t.Fatalf("store.Read should not be called for operation id %q", id)
+		return nil, nil
+	}
+	h := newRouter(ms)
+	w := do(t, h, http.MethodPatch, "/fhir/r4/Patient/$summary",
+		map[string]any{"active": true})
+	assertUnknownOperationRejected(t, w)
+}
