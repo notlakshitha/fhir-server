@@ -501,9 +501,10 @@ func (h *fhirHandler) buildBundle(baseURL, rt string, result store.SearchResult,
 }
 
 // projectionFromParams extracts the _summary mode and the _elements list from
-// the request's query params.
+// the request's query params. The _summary code is normalised to lower case
+// so values such as "Data", "TRUE" or "Count" select the same mode.
 func projectionFromParams(params map[string][]string) (summary string, elements []string) {
-	summary = firstVal(params, "_summary")
+	summary = strings.ToLower(strings.TrimSpace(firstVal(params, "_summary")))
 	if e := firstVal(params, "_elements"); e != "" {
 		for _, p := range strings.Split(e, ",") {
 			if p = strings.TrimSpace(p); p != "" {

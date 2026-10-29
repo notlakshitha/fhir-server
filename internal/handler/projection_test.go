@@ -130,3 +130,19 @@ func TestProjectionFromParams(t *testing.T) {
 		t.Errorf("elements: got %v, want [name gender]", e)
 	}
 }
+
+func TestProjectionFromParams_SummaryIsCaseInsensitive(t *testing.T) {
+	for in, want := range map[string]string{
+		"Data": "data", "TEXT": "text", "TRUE": "true", "Count": "count", " False ": "false",
+	} {
+		s, _ := projectionFromParams(map[string][]string{"_summary": {in}})
+		if s != want {
+			t.Errorf("_summary=%q: got %q, want %q", in, s, want)
+		}
+	}
+	s, _ := projectionFromParams(map[string][]string{"_summary": {"Data"}})
+	out := applyProjection(sampleResource(), s, nil)
+	if _, ok := out["text"]; ok {
+		t.Fatal("_summary=Data should drop text")
+	}
+}
