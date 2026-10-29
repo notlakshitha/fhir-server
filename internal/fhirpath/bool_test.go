@@ -96,3 +96,24 @@ func TestEvaluateBool_Matches(t *testing.T) {
 		t.Error("id matching pattern should be true")
 	}
 }
+
+func TestEvaluateBool_StringArgQuotes(t *testing.T) {
+	r := map[string]any{"resourceType": "Patient", "id": "A12"}
+	for _, tc := range []struct {
+		expr string
+		want bool
+	}{
+		{`id.matches("[A-Z][0-9]+")`, true},
+		{`id.matches('[A-Z][0-9]+')`, true},
+		{`id.matches('(A|B)12')`, true},
+		{`id.matches("^[0-9]+$")`, false},
+		{`id.startsWith("A")`, true},
+		{`id.startsWith('A')`, true},
+		{`id.startsWith("B")`, false},
+	} {
+		got, err := EvaluateBool(tc.expr, r)
+		if err != nil || got != tc.want {
+			t.Errorf("%s: got %v (err %v), want %v", tc.expr, got, err, tc.want)
+		}
+	}
+}

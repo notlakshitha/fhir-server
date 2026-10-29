@@ -186,6 +186,19 @@ func evalComparison(leftExpr, rightExpr, op string, res map[string]any) (bool, e
 	return false, fmt.Errorf("unknown comparison operator %q", op)
 }
 
+// stringCallArg returns the literal argument of a single-argument function
+// call, given the text after the opening parenthesis (e.g. `'A')`). The
+// closing parenthesis and one pair of matching single or double quotes are
+// removed, mirroring the literal handling in evalLeafStr.
+func stringCallArg(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimSpace(strings.TrimSuffix(s, ")"))
+	if len(s) >= 2 && (s[0] == '\'' || s[0] == '"') && s[len(s)-1] == s[0] {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
 // evalLeafStr evaluates a leaf expression to its string representation.
 // For path expressions it returns the string value of the first result.
 // For quoted literals it strips the quotes.
@@ -259,8 +272,7 @@ func evalPathExpr(expr string, res map[string]any) (bool, error) {
 	// .matches(pattern)
 	if idx := strings.LastIndex(expr, ".matches("); idx >= 0 {
 		path := expr[:idx]
-		patStr := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(expr[idx+9:]), "'"), "')")
-		patStr = strings.TrimSuffix(strings.TrimSuffix(patStr, "'"), ")")
+		patStr := stringCallArg(expr[idx+9:])
 		vals, err := Evaluate(path, res)
 		if err != nil || len(vals) == 0 {
 			return false, nil
@@ -276,8 +288,7 @@ func evalPathExpr(expr string, res map[string]any) (bool, error) {
 	// .startsWith(str)
 	if idx := strings.LastIndex(expr, ".startsWith("); idx >= 0 {
 		path := expr[:idx]
-		arg := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(expr[idx+12:]), "'"), "')")
-		arg = strings.TrimSuffix(strings.TrimSuffix(arg, "'"), ")")
+		arg := stringCallArg(expr[idx+12:])
 		vals, err := Evaluate(path, res)
 		if err != nil || len(vals) == 0 {
 			return false, nil
